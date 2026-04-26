@@ -1,7 +1,7 @@
 
 ## Current Progress
 - API connection is working  
-- Assignment 3 HTTP code successfully integrated  
+- Assignment 3 code successfully integrated  
 - GitHub repository set up  
 - Input thread development has begun  
 
