@@ -5,7 +5,7 @@
 - GitHub repository set up  
 - Input thread development has begun  
 
-Most core features (scheduler logic, multithreading, and API interaction) are still in progress. :contentReference[oaicite:0]{index=0}
+Most core features (scheduler logic, multithreading, and API interaction) are still in progress.
 
 ## Team Members
 
