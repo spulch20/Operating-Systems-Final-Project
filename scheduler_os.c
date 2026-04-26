@@ -6,7 +6,7 @@
 
 // struct to hold elevator information
 typedef struct {
-    char name[10];
+    char name[1000];
     int lowest_floor;
     int highest_floor;
     int current_floor;
