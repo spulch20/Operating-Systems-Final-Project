@@ -4,7 +4,7 @@
 #include <curl/curl.h>
 
 //function to read and print the .bldg file
-void read_and_print_bldg(const char *filename) {
+void read_bldg(const char *filename) {
     FILE *file = fopen(filename, "r");
     if (!file) 
     {
@@ -12,7 +12,7 @@ void read_and_print_bldg(const char *filename) {
         exit(1);
     }
 
-    printf("Elevator Configuration\n");
+    printf("Elevator Configurations\n");
     char line[256];
     while (fgets(line, sizeof(line), file)) {
         printf("%s", line);
@@ -32,7 +32,7 @@ int main(int argc, char *argv[]) {
 
     curl_global_init(CURL_GLOBAL_ALL);
 
-    read_and_print_bldg(bldg_file);
+    read_bldg(bldg_file);
 
     //rest of code
 
