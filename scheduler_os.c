@@ -39,6 +39,42 @@ int parse_bldg_file(const char *filename, Elevator *elevators)
     fclose(file);
     return count;
 }
+// struct to store the text we get back from the api
+typedef struct {
+    char *text;
+    size_t length;
+} api_response;
+
+// defining a function for the curl library to call whenever text is sent back from the api
+size_t saving_api_response(void *api_text, size_t byte_size, size_t item_count, void *response_pointer)
+{
+    // finding how many bytes curl got from the api
+    size_t total_bytes = byte_size * item_count;
+
+    // making our pointer point to the api_response struct from above
+    api_response *response = (api_response *)response_pointer;
+
+    // making more space so we can continue to store more text from the api
+    response->text = realloc(response->text, response->length + total_bytes + 1);
+
+    // if NULL is found, memory allocation failed, so return 0 to tell curl to stop
+    if (response->text == NULL) {
+        return 0;
+    }
+
+    // copying the newest api response after the text already stored
+    memcpy(response->text + response->length, api_text, total_bytes);
+
+    // updating the length after new api text is added
+    response->length += total_bytes;
+
+    // add '\0' so C knows where the api response string ends
+    response->text[response->length] = '\0';
+
+    // letting curl know how many bytes were saved
+    return total_bytes;
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         printf("Error, 2 arguments required: bldg_file and port\n");
