@@ -3,6 +3,7 @@
 #include <string.h>
 #include <curl/curl.h>
 #include <pthread.h>
+#include <unistd.h>
 
 // struct to hold elevator information
 typedef struct {
@@ -45,6 +46,12 @@ typedef struct {
     size_t length;
 } api_response;
 
+//making struct for input thread args
+typedef struct{
+    int port;
+
+} inputThreadArgs;
+
 // defining a function for the curl library to call whenever text is sent back from the api
 size_t saving_api_response(void *api_text, size_t byte_size, size_t item_count, void *response_pointer)
 {
@@ -75,6 +82,80 @@ size_t saving_api_response(void *api_text, size_t byte_size, size_t item_count, 
     return total_bytes;
 }
 
+void *inputThread(void *arg){
+    inputThreadArgs *args = (inputThreadArgs *)arg;//cast args to our struct
+    int port = (*args).port; //get port number
+    char url[1000];
+
+    snprintf(url, 1000, "http://127.0.0.1:%d/NextInput", port );//builds URL
+
+    //loop to keep checking the API for new Input
+    while (1){
+        CURL *curl = curl_easy_init(); //initialize curl
+
+        if (curl){
+            api_response response; 
+            response.text = malloc(1);
+            response.length = 0;
+
+            response.text[0] = '\0';
+
+            //set the URL
+            curl_easy_setopt(curl, CURLOPT_URL, url);
+            //use our saving_api_response function
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, saving_api_response);
+            //pass curl response to  response
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)&response);
+
+            //do get request
+            CURLcode cresponse = curl_easy_perform(curl);
+            //check if request failed otherwise print next input
+            if (cresponse != CURLE_OK){
+                printf("error in curl: %s\n", curl_easy_strerror(cresponse));
+            } else{
+                printf("next input: %s\n", response.text);
+            }
+
+    
+            
+            //free memory
+            free(response.text);
+            curl_easy_cleanup(curl);
+
+        }
+        //stops program from spamming the API with requests.. does it every half second
+        usleep(500000);
+    }
+    return NULL;
+}
+
+void startSim(int port) {
+    CURL *curl = curl_easy_init();//initialize curl
+
+    char url[1000];
+
+    //build url
+    snprintf(url, 1000, "http://127.0.0.1:%d/Simulation/start", port);
+
+    //set url
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+
+    //specify put method
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+
+    //excecute request
+    CURLcode curlStatus = curl_easy_perform(curl);
+
+    //check for failuer
+    if (curlStatus != CURLE_OK) {
+        printf("sim start failled: %s\n", curl_easy_strerror(curlStatus));
+    } else {
+        printf("Sim started\n");
+    }
+
+    curl_easy_cleanup(curl);
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 3) {
         printf("Error, 2 arguments required: bldg_file and port\n");
@@ -90,6 +171,16 @@ int main(int argc, char *argv[]) {
 
     curl_global_init(CURL_GLOBAL_ALL);
 
+    startSim(port);//starts sim
+    pthread_t inputThread1;
+
+    inputThreadArgs inputArgs;
+    inputArgs.port = port;
+
+    //creates our input thread
+    pthread_create(&inputThread1, NULL, inputThread, &inputArgs);
+    pthread_join(inputThread1, NULL);
+    
     //rest of code
 
     curl_global_cleanup();
