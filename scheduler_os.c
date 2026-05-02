@@ -59,7 +59,7 @@ typedef struct{
     int end_floor;
 }Person;
 
-// my function to parse text from /NextInput into my person struct above this
+// function to parse text from /NextInput into my person struct above this
 int parse_person_input(char *api_text, Person *person){
 
     // checking if the api sends back none and returning 0 becuase that means there is no person to store into my structure
@@ -68,7 +68,7 @@ int parse_person_input(char *api_text, Person *person){
 }
 
     // ensuring the format is person_id start_floor and end_floor
-    if (sscanf(api_text, "%[^|] | %d | %d", person->person_id, &person->start_floor, &person->end_floor) == 3){
+    if (sscanf(api_text, "%[^ |] | %d | %d", person->person_id, &person->start_floor, &person->end_floor) == 3){
         return 1;
     }
 
@@ -107,6 +107,39 @@ size_t saving_api_response(void *api_text, size_t byte_size, size_t item_count, 
     return total_bytes;
 }
 
+// function to assign people to given elevator
+void assign_elevator(int port, const char *person_id, const char *elevator_name) 
+{
+    CURL *curl = curl_easy_init();
+    if (!curl) 
+    {
+        printf("Curl initialization failed for some reason\n");
+        return;
+    }
+
+    char url[1000];
+    
+    // PUT /AddPersonToElevator/<personID>/<elevatorID>
+    snprintf(url, 1000, "http://127.0.0.1:%d/AddPersonToElevator/%s/%s", port, person_id, elevator_name); //build URL
+
+    curl_easy_setopt(curl, CURLOPT_URL, url); //set URL
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT"); //specify PUT
+
+    // perform request
+    CURLcode curlStatus = curl_easy_perform(curl);
+
+    if (curlStatus != CURLE_OK) //if failed
+    {
+        printf("\nFailed to assign person %s to elevator: %s\n", person_id, elevator_name);
+    } else //if successful
+    {
+        printf("\nSuccessfully requested to assign person %s to elevator: %s\n", person_id, elevator_name);
+    }
+
+    curl_easy_cleanup(curl);
+}
+
+
 void *inputThread(void *arg){
     inputThreadArgs *args = (inputThreadArgs *)arg;//cast args to our struct
     int port = (*args).port; //get port number
@@ -118,11 +151,11 @@ void *inputThread(void *arg){
     while (1){
         CURL *curl = curl_easy_init(); //initialize curl
 
-        if (curl){
+        if (curl)
+        {
             api_response response; 
             response.text = malloc(1);
             response.length = 0;
-
             response.text[0] = '\0';
 
             //set the URL
@@ -135,14 +168,26 @@ void *inputThread(void *arg){
             //do get request
             CURLcode cresponse = curl_easy_perform(curl);
             //check if request failed otherwise print next input
-            if (cresponse != CURLE_OK){
+            if (cresponse != CURLE_OK)
+            {
                 printf("error in curl: %s\n", curl_easy_strerror(cresponse));
-            } else{
+            } else
+            {
                 printf("next input: %s\n", response.text);
+                Person next_person;
+                int parse_status = parse_person_input(response.text, &next_person);
+
+                // if parsing was successful it will return 1
+                if (parse_status == 1) 
+                {
+                    printf("%s wants to go from floor %d to %d\n", next_person.person_id, next_person.start_floor, next_person.end_floor);
+            
+                    //assign person to elevator. hardcoded for now but we will need to call scheduling thread here
+                    assign_elevator(port, next_person.person_id, "HotelBayA"); 
+                } 
+                //if parse_status is 0 it means the API sent NONE so we do nothing
             }
 
-    
-            
             //free memory
             free(response.text);
             curl_easy_cleanup(curl);
@@ -171,7 +216,7 @@ void startSim(int port) {
     //excecute request
     CURLcode curlStatus = curl_easy_perform(curl);
 
-    //check for failuer
+    //check for failure
     if (curlStatus != CURLE_OK) {
         printf("sim start failled: %s\n", curl_easy_strerror(curlStatus));
     } else {
@@ -180,6 +225,7 @@ void startSim(int port) {
 
     curl_easy_cleanup(curl);
 }
+
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
