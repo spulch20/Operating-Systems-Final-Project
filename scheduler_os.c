@@ -52,6 +52,31 @@ typedef struct{
 
 } inputThreadArgs;
 
+// making a structure to hold and parse text from the /NextInput
+typedef struct{
+    char person_id[100];
+    int start_floor;
+    int end_floor;
+}Person;
+
+// my function to parse text from /NextInput into my person struct above this
+int parse_person_input(char *api_text, Person *person){
+
+    // checking if the api sends back none and returning 0 becuase that means there is no person to store into my structure
+    if (strcmp(api_text, "NONE") == 0){
+        return 0;
+}
+
+    // ensuring the format is person_id start_floor and end_floor
+    if (sscanf(api_text, "%[^|] | %d | %d", person->person_id, &person->start_floor, &person->end_floor) == 3){
+        return 1;
+    }
+
+    // returning -1 so show the api response did not match the expected format
+    return -1;
+
+}
+
 // defining a function for the curl library to call whenever text is sent back from the api
 size_t saving_api_response(void *api_text, size_t byte_size, size_t item_count, void *response_pointer)
 {
