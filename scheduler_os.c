@@ -107,10 +107,12 @@ typedef struct{
 }OutputThreadArgs;
 
 //function to push a person to the elevator line queue, used by input thread
-void personPush(ElevatorLine *queue, Person person) {
+void personPush(ElevatorLine *queue, Person person) 
+{
     pthread_mutex_lock(&(*queue).mutex);
 
-    while ((*queue).count == QUEUE_SIZE) {
+    while ((*queue).count == QUEUE_SIZE) 
+    {
         pthread_cond_wait(&(*queue).notFull, &(*queue).mutex);
     }
 
@@ -122,10 +124,12 @@ void personPush(ElevatorLine *queue, Person person) {
     pthread_mutex_unlock(&(*queue).mutex);
 }
 //function to remove someone from the input queue, used by scheduler thread
-Person personPop(ElevatorLine *queue) {
+Person personPop(ElevatorLine *queue) 
+{
     pthread_mutex_lock(&(*queue).mutex);
 
-    while ((*queue).count == 0) {
+    while ((*queue).count == 0) 
+    {
         pthread_cond_wait(&(*queue).notEmpty, &(*queue).mutex);
     }
 
@@ -140,10 +144,12 @@ Person personPop(ElevatorLine *queue) {
 }
 
 //function to add to the scheduler queue, used by scheduler thread to pass data to output thread
-void schedulerPush(SchedulerQueue *queue, ElevatorAssignment assignment){
+void schedulerPush(SchedulerQueue *queue, ElevatorAssignment assignment)
+{
     pthread_mutex_lock(&(*queue).mutex);
 
-    while ((*queue).count == QUEUE_SIZE) {
+    while ((*queue).count == QUEUE_SIZE) 
+    {
         pthread_cond_wait(&(*queue).notFull, &(*queue).mutex);
     }
 
@@ -156,10 +162,12 @@ void schedulerPush(SchedulerQueue *queue, ElevatorAssignment assignment){
 }
 
 //funciton to remove from scheduler queue, used by output thread
-ElevatorAssignment schedulerPop(SchedulerQueue *queue) {
+ElevatorAssignment schedulerPop(SchedulerQueue *queue) 
+{
     pthread_mutex_lock(&(*queue).mutex);
 
-    while ((*queue).count == 0) {
+    while ((*queue).count == 0) 
+    {
         pthread_cond_wait(&(*queue).notEmpty, &(*queue).mutex);
     }
 
@@ -173,10 +181,10 @@ ElevatorAssignment schedulerPop(SchedulerQueue *queue) {
     return assignment;
 }
 
-// function to parse text from /NextInput into my person struct above this
+// function to parse text from /NextInput into my person struct
 int parse_person_input(char *api_text, Person *person){
 
-    // checking if the api sends back none and returning 0 becuase that means there is no person to store into my structure
+    // checking if the api sends back none and returning 0 becuase that means there is no person to store
     if (strcmp(api_text, "NONE") == 0){
         return 0;
 }
@@ -190,8 +198,10 @@ int parse_person_input(char *api_text, Person *person){
     return -1;
 
 }
+
 //function to build the queue for input thread to put persons for scheduler thread
-void initElevatorLine(ElevatorLine *queue) {
+void initElevatorLine(ElevatorLine *queue) 
+{
     (*queue).head = 0;
     (*queue).tail = 0;
     (*queue).count = 0;
@@ -201,7 +211,8 @@ void initElevatorLine(ElevatorLine *queue) {
 }
 
 //function to build queue for scheduler thread to put elevator assignments for output thread
-void initSchedulerQueue(SchedulerQueue *queue) {
+void initSchedulerQueue(SchedulerQueue *queue) 
+{
     (*queue).head = 0;
     (*queue).tail = 0;
     (*queue).count = 0;
@@ -223,7 +234,8 @@ size_t saving_api_response(void *api_text, size_t byte_size, size_t item_count, 
     response->text = realloc(response->text, response->length + total_bytes + 1);
 
     // if NULL is found, memory allocation failed, so return 0 to tell curl to stop
-    if (response->text == NULL) {
+    if (response->text == NULL) 
+    {
         return 0;
     }
 
@@ -274,7 +286,8 @@ void assign_elevator(int port, const char *person_id, const char *elevator_name)
 
 
 //thread to take input from the API and pass to Scheduler thread
-void *inputThread(void *arg){
+void *inputThread(void *arg)
+{
     inputThreadArgs *args = (inputThreadArgs *)arg;//cast args to our struct
     int port = (*args).port; //get port number
     char url[1000];
@@ -282,7 +295,8 @@ void *inputThread(void *arg){
     snprintf(url, 1000, "http://127.0.0.1:%d/NextInput", port );//builds URL
 
     //loop to keep checking the API for new Input
-    while (1){
+    while (1)
+    {
         CURL *curl = curl_easy_init(); //initialize curl
 
         if (curl)
@@ -337,10 +351,12 @@ void *inputThread(void *arg){
 }
 
 //thread to take data from input thread and assign an elevator
-void *schedulerThread(void *arg){
+void *schedulerThread(void *arg)
+{
     SchedulerThreadArgs *args = (SchedulerThreadArgs *)arg;
 
-    while(1){
+    while(1)
+    {
         Person person = personPop((*args).elevatorLine);
 
         ElevatorAssignment assignment;
@@ -358,7 +374,8 @@ void *schedulerThread(void *arg){
 void *outputThread(void *arg){
         OutputThreadArgs *args = (OutputThreadArgs *)arg;
 
-    while(1){
+    while(1)
+    {
         ElevatorAssignment assignment = schedulerPop((*args).schedulerQueue);
 
         assign_elevator((*args).port, assignment.person.person_id, assignment.elevatorAssignment);
@@ -368,7 +385,8 @@ void *outputThread(void *arg){
 }
 
 //function to start simylation
-void startSim(int port) {
+void startSim(int port) 
+{
     CURL *curl = curl_easy_init();//initialize curl
 
     char url[1000];
@@ -386,9 +404,11 @@ void startSim(int port) {
     CURLcode curlStatus = curl_easy_perform(curl);
 
     //check for failure
-    if (curlStatus != CURLE_OK) {
+    if (curlStatus != CURLE_OK) 
+    {
         printf("sim start failled: %s\n", curl_easy_strerror(curlStatus));
-    } else {
+    } else 
+    {
         printf("Sim started\n");
     }
 
@@ -396,8 +416,10 @@ void startSim(int port) {
 }
 
 
-int main(int argc, char *argv[]) {
-    if (argc != 3) {
+int main(int argc, char *argv[]) 
+{
+    if (argc != 3) 
+    {
         printf("Error, 2 arguments required: bldg_file and port\n");
         exit(1);
     }
@@ -448,8 +470,6 @@ int main(int argc, char *argv[]) {
     pthread_join(inputThread1, NULL);
     pthread_join(schedulerThread1, NULL);
     pthread_join(outputThread1, NULL);
-    
-    //rest of code
 
     curl_global_cleanup();
     return 0;
