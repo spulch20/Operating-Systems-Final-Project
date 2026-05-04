@@ -5,6 +5,16 @@
 #include <pthread.h>
 #include <unistd.h>
 
+//establish queues size
+#define QUEUE_SIZE 100
+
+//creates peson data type with their name, sart floor and end floor
+typedef struct{
+    char person_id[100];
+    int start_floor;
+    int end_floor;
+}Person;
+
 // struct to hold elevator information
 typedef struct {
     char name[1000];
@@ -13,6 +23,13 @@ typedef struct {
     int current_floor;
     int capacity;
 } Elevator;
+
+//data type to stor what elevator person is assigned to
+typedef struct{
+    Person person;
+    char elevatorAssignment[100];
+
+}ElevatorAssignment;
 
 //parse the .bldg file and put each elevator in the array of elevators, return # of elevators parsed
 int parse_bldg_file(const char *filename, Elevator *elevators) 
@@ -46,18 +63,115 @@ typedef struct {
     size_t length;
 } api_response;
 
+//creates data structure for Queue holding people waiting for elevators
+typedef struct{
+    Person items[QUEUE_SIZE];
+    int head;
+    int tail;
+    int count;
+    pthread_mutex_t mutex;
+    pthread_cond_t notEmpty;
+    pthread_cond_t notFull;
+} ElevatorLine;
+
+//queue for scheduler to put assignments in after decision is made, allows ouput to pull from it
+typedef struct {
+    ElevatorAssignment items[QUEUE_SIZE];
+    int head;
+    int tail;
+    int count;
+    pthread_mutex_t mutex;
+    pthread_cond_t notEmpty;
+    pthread_cond_t notFull;
+} SchedulerQueue;
+
 //making struct for input thread args
 typedef struct{
     int port;
+    ElevatorLine *elevatorLine;
 
 } inputThreadArgs;
 
-// making a structure to hold and parse text from the /NextInput
+//structure for scheduler thread args
 typedef struct{
-    char person_id[100];
-    int start_floor;
-    int end_floor;
-}Person;
+    Elevator *elevators;
+    int elevatorCount;
+    ElevatorLine *elevatorLine;
+    SchedulerQueue *schedulerQueue;
+} SchedulerThreadArgs;
+
+//structure for output thread args
+typedef struct{
+    int port;
+    SchedulerQueue *schedulerQueue;
+}OutputThreadArgs;
+
+//function to push a person to the elevator line queue, used by input thread
+void personPush(ElevatorLine *queue, Person person) {
+    pthread_mutex_lock(&(*queue).mutex);
+
+    while ((*queue).count == QUEUE_SIZE) {
+        pthread_cond_wait(&(*queue).notFull, &(*queue).mutex);
+    }
+
+    (*queue).items[(*queue).tail] = person;
+    (*queue).tail = ((*queue).tail + 1) % QUEUE_SIZE;
+    (*queue).count++;
+
+    pthread_cond_signal(&(*queue).notEmpty);
+    pthread_mutex_unlock(&(*queue).mutex);
+}
+//function to remove someone from the input queue, used by scheduler thread
+Person personPop(ElevatorLine *queue) {
+    pthread_mutex_lock(&(*queue).mutex);
+
+    while ((*queue).count == 0) {
+        pthread_cond_wait(&(*queue).notEmpty, &(*queue).mutex);
+    }
+
+    Person person = (*queue).items[(*queue).head];
+    (*queue).head = ((*queue).head + 1) % QUEUE_SIZE;
+    (*queue).count--;
+
+    pthread_cond_signal(&(*queue).notFull);
+    pthread_mutex_unlock(&(*queue).mutex);
+
+    return person;
+}
+
+//function to add to the scheduler queue, used by scheduler thread to pass data to output thread
+void schedulerPush(SchedulerQueue *queue, ElevatorAssignment assignment){
+    pthread_mutex_lock(&(*queue).mutex);
+
+    while ((*queue).count == QUEUE_SIZE) {
+        pthread_cond_wait(&(*queue).notFull, &(*queue).mutex);
+    }
+
+    (*queue).items[(*queue).tail] = assignment;
+    (*queue).tail = ((*queue).tail + 1) % QUEUE_SIZE;
+    (*queue).count++;
+
+    pthread_cond_signal(&(*queue).notEmpty);
+    pthread_mutex_unlock(&(*queue).mutex);
+}
+
+//funciton to remove from scheduler queue, used by output thread
+ElevatorAssignment schedulerPop(SchedulerQueue *queue) {
+    pthread_mutex_lock(&(*queue).mutex);
+
+    while ((*queue).count == 0) {
+        pthread_cond_wait(&(*queue).notEmpty, &(*queue).mutex);
+    }
+
+    ElevatorAssignment assignment = (*queue).items[(*queue).head];
+    (*queue).head = ((*queue).head + 1) % QUEUE_SIZE;
+    (*queue).count--;
+
+    pthread_cond_signal(&(*queue).notFull);
+    pthread_mutex_unlock(&(*queue).mutex);
+
+    return assignment;
+}
 
 // function to parse text from /NextInput into my person struct above this
 int parse_person_input(char *api_text, Person *person){
@@ -75,6 +189,25 @@ int parse_person_input(char *api_text, Person *person){
     // returning -1 so show the api response did not match the expected format
     return -1;
 
+}
+//function to build the queue for input thread to put persons for scheduler thread
+void initElevatorLine(ElevatorLine *queue) {
+    (*queue).head = 0;
+    (*queue).tail = 0;
+    (*queue).count = 0;
+    pthread_mutex_init(&(*queue).mutex, NULL);
+    pthread_cond_init(&(*queue).notEmpty, NULL);
+    pthread_cond_init(&(*queue).notFull, NULL);
+}
+
+//function to build queue for scheduler thread to put elevator assignments for output thread
+void initSchedulerQueue(SchedulerQueue *queue) {
+    (*queue).head = 0;
+    (*queue).tail = 0;
+    (*queue).count = 0;
+    pthread_mutex_init(&(*queue).mutex, NULL);
+    pthread_cond_init(&(*queue).notEmpty, NULL);
+    pthread_cond_init(&(*queue).notFull, NULL);
 }
 
 // defining a function for the curl library to call whenever text is sent back from the api
@@ -140,6 +273,7 @@ void assign_elevator(int port, const char *person_id, const char *elevator_name)
 }
 
 
+//thread to take input from the API and pass to Scheduler thread
 void *inputThread(void *arg){
     inputThreadArgs *args = (inputThreadArgs *)arg;//cast args to our struct
     int port = (*args).port; //get port number
@@ -181,9 +315,12 @@ void *inputThread(void *arg){
                 if (parse_status == 1) 
                 {
                     printf("%s wants to go from floor %d to %d\n", next_person.person_id, next_person.start_floor, next_person.end_floor);
-            
+                    /*
                     //assign person to elevator. hardcoded for now but we will need to call scheduling thread here
-                    assign_elevator(port, next_person.person_id, "HotelBayA"); 
+                    assign_elevator(port, next_person.person_id, "HotelBayA");
+                    */
+                    //push person to queue for scheduler to take from
+                    personPush((*args).elevatorLine, next_person);
                 } 
                 //if parse_status is 0 it means the API sent NONE so we do nothing
             }
@@ -199,6 +336,38 @@ void *inputThread(void *arg){
     return NULL;
 }
 
+//thread to take data from input thread and assign an elevator
+void *schedulerThread(void *arg){
+    SchedulerThreadArgs *args = (SchedulerThreadArgs *)arg;
+
+    while(1){
+        Person person = personPop((*args).elevatorLine);
+
+        ElevatorAssignment assignment;
+        assignment.person = person;
+
+        strcpy(assignment.elevatorAssignment, (*args).elevators[0].name);
+        schedulerPush((*args).schedulerQueue, assignment);
+    }
+
+    return NULL;
+    
+}
+
+//thread to take assignments from scheduler thread and output them
+void *outputThread(void *arg){
+        OutputThreadArgs *args = (OutputThreadArgs *)arg;
+
+    while(1){
+        ElevatorAssignment assignment = schedulerPop((*args).schedulerQueue);
+
+        assign_elevator((*args).port, assignment.person.person_id, assignment.elevatorAssignment);
+    }
+    return NULL;
+
+}
+
+//function to start simylation
 void startSim(int port) {
     CURL *curl = curl_easy_init();//initialize curl
 
@@ -243,14 +412,42 @@ int main(int argc, char *argv[]) {
     curl_global_init(CURL_GLOBAL_ALL);
 
     startSim(port);//starts sim
-    pthread_t inputThread1;
 
+    ElevatorLine elevatorLine;
+    SchedulerQueue schedulerQueue;
+
+    initElevatorLine(&elevatorLine);//create person input queue
+    initSchedulerQueue(&schedulerQueue);//create elevator assignment queue
+
+    pthread_t inputThread1;
+    pthread_t schedulerThread1;
+    pthread_t outputThread1;
+
+    //pass input thread arguments
     inputThreadArgs inputArgs;
     inputArgs.port = port;
+    inputArgs.elevatorLine = &elevatorLine;
 
-    //creates our input thread
+    //pass scheduler thread arguments
+    SchedulerThreadArgs schedulerArgs;
+    schedulerArgs.elevators = building_elevators;
+    schedulerArgs.elevatorCount = num_elevators;
+    schedulerArgs.elevatorLine = &elevatorLine;
+    schedulerArgs.schedulerQueue = &schedulerQueue;
+
+    //pass output thread arguments
+    OutputThreadArgs outputArgs;
+    outputArgs.port = port;
+    outputArgs.schedulerQueue = &schedulerQueue;
+
+    //creates our input, scheduler, and output threads
     pthread_create(&inputThread1, NULL, inputThread, &inputArgs);
+    pthread_create(&schedulerThread1, NULL, schedulerThread, &schedulerArgs);
+    pthread_create(&outputThread1, NULL, outputThread, &outputArgs);
+
     pthread_join(inputThread1, NULL);
+    pthread_join(schedulerThread1, NULL);
+    pthread_join(outputThread1, NULL);
     
     //rest of code
 
